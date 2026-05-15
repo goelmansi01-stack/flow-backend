@@ -1,0 +1,88 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: flow_postgres
+    environment:
+      POSTGRES_USER: flow_user
+      POSTGRES_PASSWORD: flow_pass
+      POSTGRES_DB: flow_db
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U flow_user -d flow_db']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: flow_redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+    container_name: flow_api
+    ports:
+      - '3000:3000'
+    environment:
+      DATABASE_URL: postgresql://flow_user:flow_pass@postgres:5432/flow_db
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: production
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    container_name: flow_worker
+    environment:
+      DATABASE_URL: postgresql://flow_user:flow_pass@postgres:5432/flow_db
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: production
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: scheduler
+    container_name: flow_scheduler
+    environment:
+      DATABASE_URL: postgresql://flow_user:flow_pass@postgres:5432/flow_db
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: production
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
