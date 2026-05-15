@@ -1,0 +1,124 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  passwordHash String     @map("password_hash")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  workflows    Workflow[]
+
+  @@map("users")
+}
+
+enum WorkflowStatus {
+  draft
+  published
+}
+
+model Workflow {
+  id               String             @id @default(uuid())
+  userId           String             @map("user_id")
+  name             String
+  status           WorkflowStatus     @default(draft)
+  draftDefinition  Json               @default("{}") @map("draft_definition")
+  webhookSecret    String?            @map("webhook_secret")
+  shareToken       String?            @unique @map("share_token")
+  cronExpression   String?            @map("cron_expression")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versions         WorkflowVersion[]
+  webhookDeliveries WebhookDelivery[]
+
+  @@index([userId])
+  @@map("workflows")
+}
+
+model WorkflowVersion {
+  id             String    @id @default(uuid())
+  workflowId     String    @map("workflow_id")
+  versionNumber  Int       @map("version_number")
+  definition     Json
+  publishedAt    DateTime  @default(now()) @map("published_at")
+  workflow       Workflow  @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  runs           Run[]
+
+  @@unique([workflowId, versionNumber])
+  @@index([workflowId])
+  @@map("workflow_versions")
+}
+
+enum RunStatus {
+  queued
+  running
+  paused
+  completed
+  failed
+  cancelled
+}
+
+enum TriggerType {
+  webhook
+  schedule
+  manual
+}
+
+model Run {
+  id                String          @id @default(uuid())
+  workflowVersionId String          @map("workflow_version_id")
+  status            RunStatus       @default(queued)
+  triggerType       TriggerType     @map("trigger_type")
+  triggerPayload    Json?           @map("trigger_payload")
+  currentNodeId     String?         @map("current_node_id")
+  startedAt         DateTime?       @map("started_at")
+  endedAt           DateTime?       @map("ended_at")
+  errorMessage      String?         @map("error_message")
+  workflowVersion   WorkflowVersion @relation(fields: [workflowVersionId], references: [id], onDelete: Cascade)
+  nodeExecutions    NodeExecution[]
+
+  @@index([workflowVersionId])
+  @@index([status])
+  @@map("runs")
+}
+
+enum NodeExecutionStatus {
+  success
+  failed
+  skipped
+}
+
+model NodeExecution {
+  id         String              @id @default(uuid())
+  runId      String              @map("run_id")
+  nodeId     String              @map("node_id")
+  attempt    Int                 @default(1)
+  status     NodeExecutionStatus
+  input      Json?
+  output     Json?
+  durationMs Int?                @map("duration_ms")
+  startedAt  DateTime            @default(now()) @map("started_at")
+  run        Run                 @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, nodeId, attempt])
+  @@index([runId])
+  @@map("node_executions")
+}
+
+model WebhookDelivery {
+  id         String   @id @default(uuid())
+  workflowId String   @map("workflow_id")
+  requestId  String   @unique @map("request_id")
+  receivedAt DateTime @default(now()) @map("received_at")
+  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([workflowId])
+  @@index([receivedAt])
+  @@map("webhook_deliveries")
+}
