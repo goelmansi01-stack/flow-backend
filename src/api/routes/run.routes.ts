@@ -3,6 +3,7 @@ import { authenticate } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validate.middleware';
 import { manualRunSchema, runIdSchema, webhookSchema } from '../validators/run.validators';
 import {
+  listRuns,
   manualTrigger,
   webhookTrigger,
   getRun,
@@ -18,6 +19,7 @@ router.post('/hooks/:workflowId', validate(webhookSchema), webhookTrigger);
 
 // Authenticated run management
 router.use(authenticate);
+router.get('/runs', listRuns);
 router.post('/workflows/:id/run', validate(manualRunSchema), manualTrigger);
 router.get('/runs/:id', validate(runIdSchema), getRun);
 router.post('/runs/:id/pause', validate(runIdSchema), pauseRun);

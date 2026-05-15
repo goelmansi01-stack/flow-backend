@@ -10,6 +10,7 @@ datasource db {
 model User {
   id           String     @id @default(uuid())
   email        String     @unique
+  name         String     @default("")
   passwordHash String     @map("password_hash")
   createdAt    DateTime   @default(now()) @map("created_at")
   workflows    Workflow[]

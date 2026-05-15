@@ -7,13 +7,28 @@ import { logger } from '../lib/logger';
 // Maps workflowId → active ScheduledTask so we can start/stop dynamically
 const activeTasks = new Map<string, ScheduledTask>();
 
+// Neon free-tier hibernates after 5 min idle; P1001 = DB still waking up — not a real error
+function isTransientDbError(err: unknown): boolean {
+  const code = (err as { code?: string })?.code;
+  return code === 'P1001' || code === 'P1002';
+}
+
 async function syncScheduledWorkflows() {
   logger.debug('scheduler: syncing scheduled workflows');
 
-  const publishedWithCron = await prisma.workflow.findMany({
-    where: { status: 'published', cronExpression: { not: null } },
-    select: { id: true, cronExpression: true },
-  });
+  let publishedWithCron: { id: string; cronExpression: string | null }[];
+  try {
+    publishedWithCron = await prisma.workflow.findMany({
+      where: { status: 'published', cronExpression: { not: null } },
+      select: { id: true, cronExpression: true },
+    });
+  } catch (err) {
+    if (isTransientDbError(err)) {
+      logger.warn('scheduler: DB unreachable (cold start / hibernation) — will retry next tick');
+      return;
+    }
+    throw err;
+  }
 
   const activeWorkflowIds = new Set(publishedWithCron.map((w: { id: string }) => w.id));
 
@@ -78,11 +93,19 @@ async function triggerScheduledRun(workflowId: string) {
   }
 }
 
+function handleSyncError(err: unknown, label: string) {
+  if (isTransientDbError(err)) {
+    logger.warn(`scheduler: ${label} — DB unreachable (cold start / hibernation)`);
+  } else {
+    logger.error({ err }, `scheduler: ${label}`);
+  }
+}
+
 // Sync once on startup, then re-sync every minute to pick up newly published workflows
-syncScheduledWorkflows().catch((err) => logger.error({ err }, 'scheduler: initial sync failed'));
+syncScheduledWorkflows().catch((err) => handleSyncError(err, 'initial sync failed'));
 
 cron.schedule('* * * * *', () => {
-  syncScheduledWorkflows().catch((err) => logger.error({ err }, 'scheduler: sync failed'));
+  syncScheduledWorkflows().catch((err) => handleSyncError(err, 'sync failed'));
 });
 
 logger.info('Flow scheduler started');

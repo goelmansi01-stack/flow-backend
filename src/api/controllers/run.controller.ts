@@ -100,6 +100,21 @@ export async function webhookTrigger(req: Request, res: Response, next: NextFunc
   }
 }
 
+export async function listRuns(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { userId } = req as AuthenticatedRequest;
+    const runs = await prisma.run.findMany({
+      where: { workflowVersion: { workflow: { userId } } },
+      include: { workflowVersion: { select: { versionNumber: true, workflowId: true } } },
+      orderBy: { startedAt: 'desc' },
+      take: 50,
+    });
+    res.json({ runs });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function getRun(req: Request, res: Response, next: NextFunction) {
   try {
     const { userId } = req as AuthenticatedRequest;
