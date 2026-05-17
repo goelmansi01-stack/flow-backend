@@ -76,18 +76,16 @@ export async function getPublicWorkflow(req: Request, res: Response, next: NextF
       throw new AppError(404, 'Workflow not found or not published', 'NOT_FOUND');
     }
 
-    // Surface a simplified view — hide internal node configs
     const latestVersion = workflow.versions[0];
     const definition = latestVersion?.definition as any;
-    const nodeNames: string[] = definition?.nodes?.map((n: any) => n.name) ?? [];
+    const nodes: Array<{ name: string; type: string }> =
+      definition?.nodes?.map((n: any) => ({ name: n.name, type: n.type })) ?? [];
+    const triggerType = definition?.trigger?.type ?? 'manual';
 
     res.json({
-      id: workflow.id,
       name: workflow.name,
-      updatedAt: workflow.updatedAt,
-      version: latestVersion?.versionNumber,
-      publishedAt: latestVersion?.publishedAt,
-      steps: nodeNames,
+      triggerType,
+      nodes,
     });
   } catch (err) {
     next(err);
@@ -158,7 +156,7 @@ export async function getPublicRunStatus(req: Request, res: Response, next: Next
         errorMessage: true,
         nodeExecutions: {
           orderBy: { startedAt: 'asc' },
-          select: { nodeId: true, status: true, durationMs: true, startedAt: true },
+          select: { nodeId: true, status: true, durationMs: true, startedAt: true, output: true },
         },
       },
     });

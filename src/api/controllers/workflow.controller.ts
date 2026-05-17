@@ -5,23 +5,31 @@ import { AppError } from '../../lib/types';
 import { validateDefinitionGraph } from '../validators/workflow.validators';
 import type { AuthenticatedRequest } from '../middleware/auth.middleware';
 
+// Normalize DB row → API shape: expose draftDefinition as "definition"
+function toApiWorkflow(w: Record<string, unknown>) {
+  const { draftDefinition, ...rest } = w as { draftDefinition: unknown; [k: string]: unknown };
+  return { ...rest, definition: draftDefinition ?? {} };
+}
+
 export async function listWorkflows(req: Request, res: Response, next: NextFunction) {
   try {
     const { userId } = req as AuthenticatedRequest;
-    const workflows = await prisma.workflow.findMany({
+    const rows = await prisma.workflow.findMany({
       where: { userId },
       orderBy: { updatedAt: 'desc' },
       select: {
         id: true,
         name: true,
         status: true,
+        draftDefinition: true,
         cronExpression: true,
+        shareToken: true,
         createdAt: true,
         updatedAt: true,
         _count: { select: { versions: true } },
       },
     });
-    res.json({ workflows });
+    res.json({ workflows: rows.map(toApiWorkflow) });
   } catch (err) {
     next(err);
   }
@@ -35,7 +43,7 @@ export async function getWorkflow(req: Request, res: Response, next: NextFunctio
       include: { versions: { orderBy: { versionNumber: 'desc' }, take: 5 } },
     });
     if (!workflow) throw new AppError(404, 'Workflow not found', 'NOT_FOUND');
-    res.json({ workflow });
+    res.json({ workflow: toApiWorkflow(workflow as unknown as Record<string, unknown>) });
   } catch (err) {
     next(err);
   }
@@ -56,7 +64,7 @@ export async function createWorkflow(req: Request, res: Response, next: NextFunc
         cronExpression: cronExpression ?? null,
       },
     });
-    res.status(201).json({ workflow });
+    res.status(201).json({ workflow: toApiWorkflow(workflow as unknown as Record<string, unknown>) });
   } catch (err) {
     next(err);
   }
@@ -67,9 +75,6 @@ export async function updateWorkflow(req: Request, res: Response, next: NextFunc
     const { userId } = req as AuthenticatedRequest;
     const workflow = await prisma.workflow.findFirst({ where: { id: req.params.id, userId } });
     if (!workflow) throw new AppError(404, 'Workflow not found', 'NOT_FOUND');
-    if (workflow.status === 'published') {
-      throw new AppError(409, 'Cannot edit a published workflow — unpublish first', 'WORKFLOW_PUBLISHED');
-    }
 
     const { name, definition, cronExpression } = req.body;
     const updated = await prisma.workflow.update({
@@ -80,7 +85,7 @@ export async function updateWorkflow(req: Request, res: Response, next: NextFunc
         ...(cronExpression !== undefined && { cronExpression }),
       },
     });
-    res.json({ workflow: updated });
+    res.json({ workflow: toApiWorkflow(updated as unknown as Record<string, unknown>) });
   } catch (err) {
     next(err);
   }

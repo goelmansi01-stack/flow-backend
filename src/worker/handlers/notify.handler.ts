@@ -1,5 +1,4 @@
 import nodemailer from 'nodemailer';
-import axios from 'axios';
 import { config } from '../../lib/config';
 import { AppError } from '../../lib/types';
 import type { ExecutionContext, NotifyNodeConfig } from '../../lib/types';
@@ -8,21 +7,12 @@ export async function notifyHandler(
   _ctx: ExecutionContext,
   nodeConfig: NotifyNodeConfig,
 ): Promise<Record<string, unknown>> {
-  const { channel, message, to, subject } = nodeConfig;
-
-  if (channel === 'email') {
-    return sendEmail(to, subject, message);
-  }
-
-  if (channel === 'slack') {
-    return sendSlack(message);
-  }
-
-  throw new AppError(422, `Unknown notify channel: "${channel}"`, 'NOTIFY_ERROR');
+  const { to, subject, body } = nodeConfig;
+  return sendEmail(to, subject, body);
 }
 
 async function sendEmail(
-  to: string | undefined,
+  to: string,
   subject: string | undefined,
   message: string,
 ): Promise<Record<string, unknown>> {
@@ -45,11 +35,3 @@ async function sendEmail(
   return { channel: 'email', messageId: info.messageId, accepted: info.accepted };
 }
 
-async function sendSlack(message: string): Promise<Record<string, unknown>> {
-  if (!config.SLACK_WEBHOOK_URL) {
-    throw new AppError(500, 'Slack webhook URL not configured', 'NOTIFY_ERROR');
-  }
-
-  await axios.post(config.SLACK_WEBHOOK_URL, { text: message });
-  return { channel: 'slack', sent: true };
-}

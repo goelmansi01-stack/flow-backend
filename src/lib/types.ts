@@ -29,27 +29,22 @@ export interface HttpNodeConfig {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   url: string;
   headers?: Record<string, string>;
-  body?: Record<string, unknown>;
+  body?: string;     // JSON string body from frontend form
   timeoutMs?: number;
 }
 
 export interface ConditionNodeConfig {
-  jsonPath: string;   // e.g. "$.status"
-  operator: 'eq' | 'neq' | 'gt' | 'lt' | 'contains' | 'exists';
-  value: unknown;
+  expression: string; // JSONPath expression; truthy result → true branch
 }
 
 export interface DelayNodeConfig {
   delaySeconds: number;
 }
 
-export type NotifyChannel = 'email' | 'slack';
-
 export interface NotifyNodeConfig {
-  channel: NotifyChannel;
-  to?: string;       // email recipient
-  subject?: string;  // email subject
-  message: string;
+  to: string;
+  subject?: string;
+  body: string;
 }
 
 // Execution context passed to each handler

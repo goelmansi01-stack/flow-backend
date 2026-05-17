@@ -103,12 +103,21 @@ export async function webhookTrigger(req: Request, res: Response, next: NextFunc
 export async function listRuns(req: Request, res: Response, next: NextFunction) {
   try {
     const { userId } = req as AuthenticatedRequest;
-    const runs = await prisma.run.findMany({
+    const rows = await prisma.run.findMany({
       where: { workflowVersion: { workflow: { userId } } },
-      include: { workflowVersion: { select: { versionNumber: true, workflowId: true } } },
+      include: {
+        workflowVersion: {
+          select: { versionNumber: true, workflowId: true, workflow: { select: { name: true } } },
+        },
+      },
       orderBy: { startedAt: 'desc' },
       take: 50,
     });
+    const runs = rows.map(r => ({
+      ...r,
+      workflowId: r.workflowVersion.workflowId,
+      workflowName: r.workflowVersion.workflow.name,
+    }));
     res.json({ runs });
   } catch (err) {
     next(err);

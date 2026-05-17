@@ -1,19 +1,17 @@
 import { z } from 'zod';
 
-// Node config schemas
+// Node config schemas — aligned with frontend form payloads
 
 const httpConfigSchema = z.object({
   method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
-  url: z.string().url('HTTP node URL must be a valid URL'),
+  url: z.string(),                       // validated at publish/run time by the executor
   headers: z.record(z.string()).optional(),
-  body: z.record(z.unknown()).optional(),
+  body: z.string().optional(),
   timeoutMs: z.number().int().min(100).max(30_000).optional(),
 });
 
 const conditionConfigSchema = z.object({
-  jsonPath: z.string().min(1, 'jsonPath is required'),
-  operator: z.enum(['eq', 'neq', 'gt', 'lt', 'contains', 'exists']),
-  value: z.unknown(),
+  expression: z.string().min(1, 'expression is required'), // JSONPath expression string
 });
 
 const delayConfigSchema = z.object({
@@ -25,10 +23,9 @@ const delayConfigSchema = z.object({
 });
 
 const notifyConfigSchema = z.object({
-  channel: z.enum(['email', 'slack']),
-  to: z.string().email().optional(),
+  to: z.string(),
   subject: z.string().max(200).optional(),
-  message: z.string().min(1, 'Message is required').max(5000),
+  body: z.string().max(5000).optional(),
 });
 
 const nodeSchema = z.object({
@@ -36,6 +33,7 @@ const nodeSchema = z.object({
   type: z.enum(['http_request', 'condition', 'delay', 'notify']),
   name: z.string().min(1).max(100),
   config: z.union([httpConfigSchema, conditionConfigSchema, delayConfigSchema, notifyConfigSchema]),
+  position: z.object({ x: z.number(), y: z.number() }).optional(),
 });
 
 const edgeSchema = z.object({
@@ -46,6 +44,10 @@ const edgeSchema = z.object({
 });
 
 export const workflowDefinitionSchema = z.object({
+  trigger: z.object({
+    type: z.enum(['webhook', 'schedule', 'manual']),
+    cronExpression: z.string().optional(),
+  }).optional(),
   nodes: z.array(nodeSchema).min(1, 'Workflow must have at least one node'),
   edges: z.array(edgeSchema),
   triggerNodeId: z.string().min(1, 'triggerNodeId is required'),
@@ -95,17 +97,26 @@ export const workflowRunsQuerySchema = z.object({
 // Helpers for runtime graph validation
 
 export function validateDefinitionGraph(definition: {
-  nodes: Array<{ id: string }>;
-  edges: Array<{ from: string; to: string }>;
-  triggerNodeId: string;
+  nodes?: Array<{ id: string }>;
+  edges?: Array<{ from: string; to: string }>;
+  triggerNodeId?: string;
 }): string | null {
+  if (!definition?.nodes || definition.nodes.length === 0) {
+    return 'Workflow has no nodes to publish';
+  }
+  if (!definition.triggerNodeId) {
+    return 'triggerNodeId is required — save the workflow before publishing';
+  }
+
   const nodeIds = new Set(definition.nodes.map((n) => n.id));
 
   if (!nodeIds.has(definition.triggerNodeId)) {
     return `triggerNodeId "${definition.triggerNodeId}" does not reference a known node`;
   }
 
-  for (const edge of definition.edges) {
+  const edges = definition.edges ?? [];
+
+  for (const edge of edges) {
     if (!nodeIds.has(edge.from)) return `Edge references unknown node "${edge.from}"`;
     if (!nodeIds.has(edge.to)) return `Edge references unknown node "${edge.to}"`;
   }
@@ -113,7 +124,7 @@ export function validateDefinitionGraph(definition: {
   // Cycle detection via DFS
   const adjacency = new Map<string, string[]>();
   for (const node of definition.nodes) adjacency.set(node.id, []);
-  for (const edge of definition.edges) adjacency.get(edge.from)!.push(edge.to);
+  for (const edge of edges) adjacency.get(edge.from)!.push(edge.to);
 
   const visited = new Set<string>();
   const inStack = new Set<string>();
